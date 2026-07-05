@@ -30,6 +30,15 @@ export const importEmailSchema = z.object({
     content: z.string().min(1),
     separator: z.string().default('----'),
     groupId: z.coerce.number().int().positive().optional(),
+}).superRefine((data, ctx) => {
+    const lines = data.content.split('\n').filter((line: string) => line.trim());
+    if (lines.length > 10000) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['content'],
+            message: `最多支持 10000 条，当前 ${lines.length} 条`,
+        });
+    }
 });
 
 export type CreateEmailInput = z.infer<typeof createEmailSchema>;

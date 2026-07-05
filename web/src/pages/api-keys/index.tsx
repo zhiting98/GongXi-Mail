@@ -157,7 +157,7 @@ const ApiKeysPage: React.FC = () => {
 
     const fetchAllEmailOptions = useCallback(async () => {
         const result = await requestData<{ list: EmailOptionItem[]; total: number }>(
-            () => emailApi.getList<EmailOptionItem>({ page: 1, pageSize: 1000, status: 'ACTIVE' }),
+            () => emailApi.getList<EmailOptionItem>({ page: 1, pageSize: 100, status: 'ACTIVE' }),
             '获取邮箱选项失败',
             { silent: true }
         );

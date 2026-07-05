@@ -2,6 +2,7 @@ import { type FastifyPluginAsync } from 'fastify';
 import { mailService } from './mail.service.js';
 import { poolService } from './pool.service.js';
 import { emailService } from '../email/email.service.js';
+import { appService } from '../app/app.service.js';
 import { MAIL_LOG_ACTIONS } from './mail.actions.js';
 import { z } from 'zod';
 import { AppError } from '../../plugins/error.js';
@@ -17,6 +18,8 @@ const mailRequestSchema = z.object({
 // 纯文本邮件请求 Schema
 const mailTextRequestSchema = z.object({
     email: z.string().email(),
+    mailbox: z.string().default('inbox'),
+    app: z.string().max(100).optional(),
     match: z.string().optional(), // 正则表达式 (可选)
 });
 
@@ -53,6 +56,12 @@ function getGroupNameFromRequest(method: string, query: unknown, body: unknown):
     return typeof groupName === 'string' ? groupName : undefined;
 }
 
+function getAppNameFromRequest(method: string, query: unknown, body: unknown): string | undefined {
+    const params = (method === 'GET' ? query : body) as Record<string, unknown> | undefined;
+    const appName = params?.app;
+    return typeof appName === 'string' ? appName : undefined;
+}
+
 const mailRoutes: FastifyPluginAsync = async (fastify) => {
     // 所有路由需要 API Key 认证
     fastify.addHook('preHandler', fastify.authenticateApiKey);
@@ -69,21 +78,26 @@ const mailRoutes: FastifyPluginAsync = async (fastify) => {
             fastify.assertApiPermission(request, MAIL_LOG_ACTIONS.GET_EMAIL);
 
             const groupName = getGroupNameFromRequest(request.method, request.query, request.body);
+            const appName = getAppNameFromRequest(request.method, request.query, request.body);
 
             // 重试 3 次，防止并发冲突
             for (let i = 0; i < 3; i++) {
-                const email = await poolService.getUnusedEmail(request.apiKey.id, groupName);
+                const email = await poolService.getUnusedEmail(request.apiKey.id, groupName, appName);
                 if (!email) {
                     const stats = await poolService.getStats(request.apiKey.id, groupName);
+                    const appHint = appName ? ` for app '${appName}'` : '';
                     throw new AppError(
                         'NO_UNUSED_EMAIL',
-                        `No unused emails available${groupName ? ` in group '${groupName}'` : ''}. Used: ${stats.used}/${stats.total}`,
+                        `No unused emails available${appHint}${groupName ? ` in group '${groupName}'` : ''}. Used: ${stats.used}/${stats.total}`,
                         400
                     );
                 }
 
                 try {
                     await poolService.markUsed(request.apiKey.id, email.id);
+                    if (appName) {
+                        await poolService.markAppUsed(request.apiKey.id, email.id, appName);
+                    }
                     await mailService.logApiCall(
                         MAIL_LOG_ACTIONS.GET_EMAIL,
                         request.apiKey.id,
@@ -101,7 +115,7 @@ const mailRoutes: FastifyPluginAsync = async (fastify) => {
                         },
                     };
                 } catch (err: unknown) {
-                    if (hasErrorCode(err, 'ALREADY_USED')) {
+                    if (hasErrorCode(err, 'ALREADY_USED') || hasErrorCode(err, 'APP_ALREADY_USED')) {
                         continue;
                     }
                     throw err;
@@ -240,10 +254,29 @@ const mailRoutes: FastifyPluginAsync = async (fastify) => {
             fetchStrategy: emailAccount.fetchStrategy,
         };
 
+        // 解析提取规则：显式传 match 优先，否则用 app 配置的 codeRegex
+        let codeRegex: string | undefined = input.match || undefined;
+
+        // 如果指定了 app，读取应用配置
+        let appConfig: { fromPatterns: string[]; subjectPattern: string | null; codeRegex: string | null; status: string } | null = null;
+        if (input.app) {
+            appConfig = await appService.getByName(input.app);
+            if (!appConfig || appConfig.status !== 'ACTIVE') {
+                reply.code(400).type('text/plain').send(`Error: App '${input.app}' not found or disabled`);
+                return;
+            }
+            // match 参数优先于 app 配置的 codeRegex
+            if (!codeRegex && appConfig.codeRegex) {
+                codeRegex = appConfig.codeRegex;
+            }
+        }
+
         try {
+            // 有 app 过滤条件时拉更多邮件（最多 10 封），否则只取 1 封
+            const fetchLimit = appConfig?.fromPatterns?.length || appConfig?.subjectPattern ? 10 : 1;
             const result = await mailService.getEmails(credentials, {
-                mailbox: 'inbox',
-                limit: 1, // 只取最新一封
+                mailbox: input.mailbox,
+                limit: fetchLimit,
             });
 
             await mailService.updateEmailStatus(credentials.id, true);
@@ -262,17 +295,42 @@ const mailRoutes: FastifyPluginAsync = async (fastify) => {
                 return;
             }
 
-            const message = result.messages[0];
-            // 优先使用 text 字段
-            let content = message.text || '';
+            // 如果配置了 app 过滤条件，按发件人+主题筛选
+            let matchedMessage = result.messages[0];
+            if (appConfig) {
+                const filtered = result.messages.filter((msg) => {
+                    // 发件人匹配（任一匹配即可）
+                    if (appConfig!.fromPatterns.length > 0) {
+                        const fromMatch = appConfig!.fromPatterns.some((pattern) =>
+                            msg.from.toLowerCase().includes(pattern.toLowerCase())
+                        );
+                        if (!fromMatch) return false;
+                    }
+                    // 主题匹配
+                    if (appConfig!.subjectPattern) {
+                        const subjectMatch = msg.subject
+                            .toLowerCase()
+                            .includes(appConfig!.subjectPattern.toLowerCase());
+                        if (!subjectMatch) return false;
+                    }
+                    return true;
+                });
 
-            // 如果指定了正则匹配
-            if (input.match) {
+                if (filtered.length === 0) {
+                    reply.code(404).type('text/plain').send('Error: No matching email found for app');
+                    return;
+                }
+                matchedMessage = filtered[0]; // 已按时间降序，第一条即最新
+            }
+
+            let content = matchedMessage.text || '';
+
+            // 提取验证码
+            if (codeRegex) {
                 try {
-                    const regex = new RegExp(input.match);
+                    const regex = new RegExp(codeRegex);
                     const match = content.match(regex);
                     if (match) {
-                        // 如果有捕获组，返回第一个捕获组；否则返回整个匹配
                         content = match[1] || match[0];
                     } else {
                         reply.code(404).type('text/plain').send('Error: No match found');

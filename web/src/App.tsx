@@ -15,6 +15,7 @@ const ApiDocsPage = lazy(() => import('./pages/api-docs'));
 const OperationLogsPage = lazy(() => import('./pages/operation-logs'));
 const SystemLogsPage = lazy(() => import('./pages/system-logs'));
 const AdminsPage = lazy(() => import('./pages/admins'));
+const AppsPage = lazy(() => import('./pages/apps'));
 const SettingsPage = lazy(() => import('./pages/settings'));
 
 const PageFallback: React.FC = () => (
@@ -87,6 +88,7 @@ const App: React.FC = () => {
               <Route path="emails" element={withSuspense(<EmailsPage />)} />
               <Route path="api-keys" element={withSuspense(<ApiKeysPage />)} />
               <Route path="api-docs" element={withSuspense(<ApiDocsPage />)} />
+              <Route path="apps" element={withSuspense(<AppsPage />)} />
               <Route path="operation-logs" element={withSuspense(<OperationLogsPage />)} />
               <Route path="system-logs" element={withSuspense(<SystemLogsPage />)} />
               <Route

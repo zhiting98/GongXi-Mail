@@ -52,11 +52,19 @@ const ApiDocsPage: React.FC = () => {
       name: '获取邮箱地址',
       method: 'GET/POST',
       path: '/api/get-email',
-      description: '从邮箱池中分配一个未使用的邮箱地址。可通过 group 参数限制仅从指定分组中分配。',
+      description: '从邮箱池中分配一个未使用的邮箱地址。可通过 app 参数避免同一应用重复分配同一邮箱，通过 group 参数限制仅从指定分组中分配。',
       params: [
+        { name: 'app', type: 'string', required: false, desc: '应用名称，该应用已用过的邮箱不会被再次分配' },
         { name: 'group', type: 'string', required: false, desc: '分组名称，仅从该分组中分配' },
       ],
-      example: `curl -X POST "${baseUrl}/api/get-email" \\
+      example: `# 为指定应用分配邮箱（该应用不会分配到已用过的邮箱）
+curl -X POST "${baseUrl}/api/get-email" \\
+  -H "X-API-Key: sk_your_api_key" \\
+  -H "Content-Type: application/json" \\
+  -d '{"app": "Neko API"}'
+
+# 不指定应用（仅按 API Key 去重）
+curl -X POST "${baseUrl}/api/get-email" \\
   -H "X-API-Key: sk_your_api_key"`,
       successResponse: `{
   "success": true,
@@ -81,13 +89,14 @@ const ApiDocsPage: React.FC = () => {
       params: [
         { name: 'email', type: 'string', required: true, desc: '邮箱地址' },
         { name: 'mailbox', type: 'string', required: false, desc: '邮件文件夹，默认 inbox' },
+        { name: 'app', type: 'string', required: false, desc: '应用名称（可选，用于未来扩展）' },
         { name: 'socks5', type: 'string', required: false, desc: 'SOCKS5 代理地址' },
         { name: 'http', type: 'string', required: false, desc: 'HTTP 代理地址' },
       ],
       example: `curl -X POST "${baseUrl}/api/mail_new" \\
   -H "X-API-Key: sk_your_api_key" \\
   -H "Content-Type: application/json" \\
-  -d '{"email": "example@outlook.com"}'`,
+  -d '{"email": "example@outlook.com", "mailbox": "junk"}'`,
       successResponse: `{
   "success": true,
   "data": {
@@ -118,12 +127,18 @@ const ApiDocsPage: React.FC = () => {
       name: '获取邮件文本 (脚本)',
       method: 'GET/POST',
       path: '/api/mail_text',
-      description: '专门为脚本设计的轻量接口，返回 `text/plain` 格式的内容。支持正则表达式提取验证码。',
+      description: '专门为脚本设计的轻量接口，返回 `text/plain` 格式的内容。支持正则提取验证码，支持按应用配置自动匹配邮件和提取验证码。',
       params: [
         { name: 'email', type: 'string', required: true, desc: '邮箱地址' },
-        { name: 'match', type: 'string', required: false, desc: '正则表达式 (例如 `\\d{6}`)' },
+        { name: 'mailbox', type: 'string', required: false, desc: '邮件文件夹：inbox（默认）/ junk' },
+        { name: 'app', type: 'string', required: false, desc: '应用名称，使用应用配置的发件人/主题匹配邮件，并用配置的正则提取验证码' },
+        { name: 'match', type: 'string', required: false, desc: '正则表达式 (例如 `\\d{6}`)，传了 match 则优先于 app 配置的正则' },
       ],
-      example: `# 获取验证码
+      example: `# 方式一：使用 app 配置自动提取验证码（推荐）
+curl "${baseUrl}/api/mail_text?email=example@outlook.com&app=Neko+API&mailbox=junk" \\
+  -H "X-API-Key: sk_your_api_key"
+
+# 方式二：手动指定正则
 curl "${baseUrl}/api/mail_text?email=example@outlook.com&match=\\d{6}" \\
   -H "X-API-Key: sk_your_api_key"`,
       successResponse: `123456`,

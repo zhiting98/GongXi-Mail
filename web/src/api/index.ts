@@ -636,3 +636,37 @@ export const logsApi = {
         requestGet<{ filePath: string; lines: number; list: T[] }>('/admin/dashboard/system-logs', { params }),
 };
 
+// ========================================
+// 应用管理 API
+// ========================================
+
+export const appApi = {
+    getList: <T = Record<string, unknown>>(params?: { page?: number; pageSize?: number; status?: string; keyword?: string }) =>
+        requestGet<ApiPagedList<T>>('/admin/apps', { params, cacheMs: 800 }),
+
+    getById: (id: number) =>
+        requestGet<Record<string, unknown>>(`/admin/apps/${id}`),
+
+    create: (data: { name: string; description?: string; fromPatterns?: string[]; subjectPattern?: string; codeRegex?: string }) =>
+        requestPost<Record<string, unknown>, typeof data>(
+            '/admin/apps',
+            data,
+            { invalidatePrefixes: ['/admin/apps'] }
+        ),
+
+    update: (id: number, data: { name?: string; description?: string; fromPatterns?: string[]; subjectPattern?: string; codeRegex?: string; status?: string }) =>
+        requestPut<Record<string, unknown>, typeof data>(
+            `/admin/apps/${id}`,
+            data,
+            { invalidatePrefixes: ['/admin/apps', `/admin/apps/${id}`] }
+        ),
+
+    delete: (id: number) =>
+        requestDelete<Record<string, unknown>>(`/admin/apps/${id}`, {
+            invalidatePrefixes: ['/admin/apps'],
+        }),
+
+    getRegistrations: <T = Record<string, unknown>>(params?: { page?: number; pageSize?: number }) =>
+        requestGet<ApiPagedList<T>>('/admin/apps/registrations', { params, cacheMs: 800 }),
+};
+

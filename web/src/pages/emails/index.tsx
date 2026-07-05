@@ -29,8 +29,9 @@ import {
     MailOutlined,
     GroupOutlined,
     SyncOutlined,
+    AppstoreOutlined,
 } from '@ant-design/icons';
-import { emailApi, groupApi } from '../../api';
+import { emailApi, groupApi, appApi } from '../../api';
 import { getErrorMessage } from '../../utils/error';
 import { requestData } from '../../utils/request';
 import dayjs from 'dayjs';
@@ -71,6 +72,7 @@ interface EmailAccount {
     status: 'ACTIVE' | 'ERROR' | 'DISABLED';
     groupId: number | null;
     group: { id: number; name: string } | null;
+    apps: { id: number; name: string; registeredAt: string }[];
     lastCheckAt: string | null;
     tokenRefreshedAt: string | null;
     errorMessage: string | null;
@@ -132,7 +134,29 @@ const EmailsPage: React.FC = () => {
     const [assignTargetGroupId, setAssignTargetGroupId] = useState<number | undefined>(undefined);
     const [refreshingTokenIds, setRefreshingTokenIds] = useState<Set<number>>(new Set());
     const [batchRefreshing, setBatchRefreshing] = useState(false);
+    const [appRegModalVisible, setAppRegModalVisible] = useState(false);
+    const [appRegEmail, setAppRegEmail] = useState('');
+    const [appRegList, setAppRegList] = useState<{ appName: string; createdAt: string }[]>([]);
+    const [appRegLoading, setAppRegLoading] = useState(false);
     const latestListRequestIdRef = useRef(0);
+
+    const handleViewAppRegs = useCallback(async (record: EmailAccount) => {
+        setAppRegEmail(record.email);
+        setAppRegModalVisible(true);
+        setAppRegLoading(true);
+        try {
+            const res = await appApi.getRegistrations({ page: 1, pageSize: 100 });
+            if (res.code === 200) {
+                const data = res.data as unknown as { list?: { appName: string; email: string; createdAt: string }[] };
+                const all = data?.list || [];
+                setAppRegList(all.filter((r) => r.email === record.email));
+            }
+        } catch {
+            // ignore
+        } finally {
+            setAppRegLoading(false);
+        }
+    }, []);
 
     const toOptionalNumber = (value: unknown): number | undefined => {
         if (value === undefined || value === null || value === '') {
@@ -639,6 +663,13 @@ const EmailsPage: React.FC = () => {
                             onClick={() => handleViewMails(record, 'Junk')}
                         />
                     </Tooltip>
+                    <Tooltip title="注册应用">
+                        <Button
+                            type="text"
+                            icon={<AppstoreOutlined />}
+                            onClick={() => handleViewAppRegs(record)}
+                        />
+                    </Tooltip>
                     <Tooltip title="编辑">
                         <Button
                             type="text"
@@ -657,12 +688,13 @@ const EmailsPage: React.FC = () => {
                 </Space>
             ),
         },
-    ], [handleDelete, handleEdit, handleRefreshToken, handleViewMails, refreshingTokenIds]);
+    ], [handleDelete, handleEdit, handleRefreshToken, handleViewMails, handleViewAppRegs, refreshingTokenIds]);
 
     const rowSelection = useMemo(
         () => ({
             selectedRowKeys,
             onChange: setSelectedRowKeys,
+            columnWidth: 40,
         }),
         [selectedRowKeys]
     );
@@ -1008,6 +1040,33 @@ const EmailsPage: React.FC = () => {
                         placeholder={`example@outlook.com${separator}client_id${separator}refresh_token`}
                     />
                 </Space>
+            </Modal>
+
+            {/* 注册应用 Modal */}
+            <Modal
+                title={`注册应用记录 - ${appRegEmail}`}
+                open={appRegModalVisible}
+                onCancel={() => setAppRegModalVisible(false)}
+                footer={null}
+                destroyOnClose
+                width={500}
+            >
+                {appRegLoading ? (
+                    <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+                ) : appRegList.length > 0 ? (
+                    <Table
+                        dataSource={appRegList.map((r, i) => ({ ...r, key: i, index: i + 1 }))}
+                        columns={[
+                            { title: '序号', dataIndex: 'index', key: 'index', width: 60 },
+                            { title: '应用', dataIndex: 'appName', key: 'appName', render: (v: string) => <Tag color="purple">{v}</Tag> },
+                            { title: '使用时间', dataIndex: 'createdAt', key: 'createdAt', render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm:ss') },
+                        ]}
+                        pagination={false}
+                        size="small"
+                    />
+                ) : (
+                    <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>暂无注册记录</div>
+                )}
             </Modal>
 
             {/* 邮件列表 Modal */}

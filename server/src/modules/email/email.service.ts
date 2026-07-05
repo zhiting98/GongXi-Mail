@@ -33,6 +33,12 @@ export const emailService = {
                 status: true,
                 groupId: true,
                 group: { select: { id: true, name: true, fetchStrategy: true } },
+                appRegistrations: {
+                    select: {
+                        app: { select: { id: true, name: true } },
+                        createdAt: true,
+                    },
+                },
                 lastCheckAt: true,
                 tokenRefreshedAt: true,
                 errorMessage: true,
@@ -45,7 +51,19 @@ export const emailService = {
             prisma.emailAccount.count({ where }),
         ]);
 
-        return { list, total, page, pageSize };
+        return {
+            list: list.map(({ appRegistrations, ...item }) => ({
+                ...item,
+                apps: appRegistrations.map((r) => ({
+                    id: r.app.id,
+                    name: r.app.name,
+                    registeredAt: r.createdAt,
+                })),
+            })),
+            total,
+            page,
+            pageSize,
+        };
     },
 
     /**

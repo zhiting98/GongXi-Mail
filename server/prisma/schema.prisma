@@ -25,7 +25,8 @@ model Admin {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  apiKeys ApiKey[]
+  apiKeys     ApiKey[]
+  createdApps App[]
 
   @@map("admins")
 }
@@ -51,8 +52,9 @@ model ApiKey {
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
   creator     Admin        @relation(fields: [createdBy], references: [id])
-  emailUsages EmailUsage[]
-  apiLogs     ApiLog[]
+  emailUsages      EmailUsage[]
+  appRegistrations AppRegistration[]
+  apiLogs          ApiLog[]
 
   @@map("api_keys")
 }
@@ -91,8 +93,9 @@ model EmailAccount {
   updatedAt    DateTime    @updatedAt @map("updated_at")
 
   group   EmailGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  usages  EmailUsage[]
-  apiLogs ApiLog[]
+  usages           EmailUsage[]
+  appRegistrations AppRegistration[]
+  apiLogs          ApiLog[]
 
   @@map("email_accounts")
 }
@@ -156,6 +159,47 @@ model ApiLog {
   @@index([createdAt])
   @@index([action, createdAt])
   @@map("api_logs")
+}
+
+// ============================================
+// 应用配置
+// ============================================
+model App {
+  id             Int      @id @default(autoincrement())
+  name           String   @unique @db.VarChar(100)
+  description    String?  @db.VarChar(255)
+  fromPatterns   Json?    @map("from_patterns")
+  subjectPattern String?  @map("subject_pattern") @db.VarChar(255)
+  codeRegex      String?  @map("code_regex") @db.VarChar(100)
+  status         Status   @default(ACTIVE)
+  createdBy      Int      @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  creator       Admin              @relation(fields: [createdBy], references: [id])
+  registrations AppRegistration[]
+
+  @@map("apps")
+}
+
+// ============================================
+// 应用注册记录（邮箱→应用绑定）
+// ============================================
+model AppRegistration {
+  id             Int      @id @default(autoincrement())
+  appId          Int      @map("app_id")
+  emailAccountId Int      @map("email_account_id")
+  apiKeyId       Int      @map("api_key_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  app          App          @relation(fields: [appId], references: [id], onDelete: Cascade)
+  emailAccount EmailAccount @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
+  apiKey       ApiKey       @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@unique([appId, emailAccountId])
+  @@index([appId])
+  @@index([emailAccountId])
+  @@map("app_registrations")
 }
 
 // ============================================

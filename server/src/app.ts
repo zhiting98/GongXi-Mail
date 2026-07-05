@@ -20,6 +20,7 @@ import apiKeyRoutes from './modules/api-key/apiKey.routes.js';
 import emailRoutes from './modules/email/email.routes.js';
 import groupRoutes from './modules/email/group.routes.js';
 import mailRoutes from './modules/mail/mail.routes.js';
+import appRoutes from './modules/app/app.routes.js';
 import dashboardRoutes from './modules/dashboard/dashboard.routes.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -30,6 +31,7 @@ export async function buildApp() {
         requestIdLogLabel: 'requestId',
         disableRequestLogging: true,
         loggerInstance: logger,
+        bodyLimit: 10 * 1024 * 1024, // 10MB，支持批量导入大量邮箱
     });
 
     const parsedCorsOrigins = (env.CORS_ORIGIN || '')
@@ -98,6 +100,7 @@ export async function buildApp() {
     await fastify.register(emailRoutes, { prefix: '/admin/emails' });
     await fastify.register(groupRoutes, { prefix: '/admin/email-groups' });
     await fastify.register(dashboardRoutes, { prefix: '/admin/dashboard' });
+    await fastify.register(appRoutes, { prefix: '/admin/apps' });
 
     // 外部 API
     await fastify.register(mailRoutes, { prefix: '/api' });

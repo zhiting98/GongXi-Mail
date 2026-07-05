@@ -23,6 +23,7 @@ import {
     FileTextOutlined,
     HistoryOutlined,
     FileSearchOutlined,
+    AppstoreOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '../stores/authStore';
 import { authApi } from '../api';
@@ -35,6 +36,7 @@ const menuConfig = [
     { key: '/dashboard', icon: <DashboardOutlined />, label: '数据概览', title: '数据概览' },
     { key: '/emails', icon: <MailOutlined />, label: '邮箱管理', title: '邮箱管理' },
     { key: '/api-keys', icon: <KeyOutlined />, label: 'API Key', title: 'API Key 管理' },
+    { key: '/apps', icon: <AppstoreOutlined />, label: '应用管理', title: '应用管理' },
     { key: '/api-docs', icon: <FileTextOutlined />, label: 'API 文档', title: 'API 文档' },
     { key: '/operation-logs', icon: <HistoryOutlined />, label: '操作日志', title: '操作日志' },
     { key: '/system-logs', icon: <FileSearchOutlined />, label: '系统日志', title: '系统日志' },

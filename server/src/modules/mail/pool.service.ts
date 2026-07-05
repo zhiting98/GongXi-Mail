@@ -108,19 +108,34 @@ export const poolService = {
     },
 
     /**
-     * 获取未被该 API Key 使用过的邮箱（可按分组过滤）
+     * 获取未被该 API Key 使用过的邮箱（可按分组过滤、按应用去重）
      */
-    async getUnusedEmail(apiKeyId: number, groupName?: string) {
+    async getUnusedEmail(apiKeyId: number, groupName?: string, appName?: string) {
         const scope = await getApiKeyScope(apiKeyId);
         const groupId = await resolveGroupId(groupName);
 
+        const notConditions: Prisma.EmailAccountWhereInput[] = [
+            { usages: { some: { apiKeyId } } },
+        ];
+
+        // 如果指定了应用，排除已在该应用注册过的邮箱
+        if (appName) {
+            const app = await prisma.app.findUnique({
+                where: { name: appName },
+                select: { id: true, status: true },
+            });
+            if (app && app.status === 'ACTIVE') {
+                notConditions.push({
+                    appRegistrations: {
+                        some: { appId: app.id },
+                    },
+                });
+            }
+        }
+
         const where = applyScopeToEmailWhere({
             status: 'ACTIVE',
-            NOT: {
-                usages: {
-                    some: { apiKeyId },
-                },
-            },
+            NOT: notConditions.length === 1 ? notConditions[0] : { AND: notConditions },
         }, scope, groupId);
 
         const email = await prisma.emailAccount.findFirst({
@@ -162,6 +177,38 @@ export const poolService = {
         } catch (error: unknown) {
             if (hasErrorCode(error, 'P2002')) {
                 throw new AppError('ALREADY_USED', 'Email already allocated to this API Key', 409);
+            }
+            throw error;
+        }
+    },
+
+    /**
+     * 标记邮箱已被某应用使用（应用级去重）
+     */
+    async markAppUsed(apiKeyId: number, emailAccountId: number, appName: string) {
+        const app = await prisma.app.findUnique({
+            where: { name: appName },
+            select: { id: true, status: true },
+        });
+        if (!app || app.status !== 'ACTIVE') {
+            return; // 应用不存在或已禁用，不记录
+        }
+
+        try {
+            await prisma.appRegistration.create({
+                data: {
+                    appId: app.id,
+                    emailAccountId,
+                    apiKeyId,
+                },
+            });
+        } catch (error: unknown) {
+            if (hasErrorCode(error, 'P2002')) {
+                throw new AppError(
+                    'APP_ALREADY_USED',
+                    `Email already used for app '${appName}'`,
+                    409
+                );
             }
             throw error;
         }
